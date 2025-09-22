@@ -15,6 +15,7 @@ This is based on my previous Soul Link website, for more about that go here: htt
 - **Generation validation** - only shows Pokémon that exist in your chosen game
 - **Streamer mode** - clean overlay window for streaming your run
 - **Import/export** - save your progress as a file to backup or share
+- **Shiny support** - you caught a shiny on your run? Totally legit?... you can show the shiny sprite variant!
 
 ## How it works
 
