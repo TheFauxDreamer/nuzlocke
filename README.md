@@ -16,6 +16,7 @@ This is based on my previous Soul Link website, for more about that go here: htt
 - **Streamer mode** - clean overlay window for streaming your run
 - **Import/export** - save your progress as a file to backup or share
 - **Shiny support** - you caught a shiny on your run? Totally legit?... you can show the shiny sprite variant!
+- **Mix & Match Generations** - playing a Gen 3 ROMhack with pokemon from Gens 1-7? You can do that.
 
 ## How it works
 
