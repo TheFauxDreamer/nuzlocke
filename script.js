@@ -860,10 +860,12 @@ function initializeCarousel() {
         slide.onclick = () => selectGeneration(gen.id);
 
         slide.innerHTML = `
-            <img src="${gen.artwork}" 
-                 alt="${gen.fullName}" 
-                 class="generation-artwork"
-                 onerror="this.src='https://via.placeholder.com/120x120/78c850/ffffff?text=${gen.name}'">
+            <div class="generation-artwork-container">
+                <img src="${gen.artwork}" 
+                    alt="${gen.fullName}" 
+                    class="generation-artwork"
+                    onerror="this.src='https://via.placeholder.com/120x120/78c850/ffffff?text=${gen.name}'">
+            </div>
             <div class="generation-info">
                 <div class="generation-name">${gen.fullName}</div>
                 <div class="generation-games">${gen.games}</div>
