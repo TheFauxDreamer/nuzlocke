@@ -1659,87 +1659,121 @@ async function addFailedEncounter() {
 
 // Updated addPokemon function with generation validation and shiny support
 async function addPokemon() {
-    const route = document.getElementById('current-route').value;
-    const pokemonName = document.getElementById('pokemon-name').value;
-    const nickname = document.getElementById('pokemon-nickname').value;
-    const isShiny = document.getElementById('pokemon-shiny').checked;
+    const addButton = document.getElementById('add-pokemon-btn');
+    const failedButton = document.getElementById('failed-btn');
+    
+    // Disable buttons immediately to prevent double-clicking
+    addButton.disabled = true;
+    failedButton.disabled = true;
+    const originalButtonText = addButton.textContent;
+    addButton.textContent = 'Adding...';
+    
+    try {
+        const route = document.getElementById('current-route').value;
+        const pokemonName = document.getElementById('pokemon-name').value;
+        const nickname = document.getElementById('pokemon-nickname').value;
+        const isShiny = document.getElementById('pokemon-shiny').checked;
 
-    if (!route) {
-        showToast('Please select a route', 'error');
-        return;
+        if (!route) {
+            showToast('Please select a route', 'error');
+            return;
+        }
+
+        if (!pokemonName) {
+            showToast('Please enter a Pokemon name', 'error');
+            return;
+        }
+
+        if (gameData.usedRoutes.includes(route)) {
+            showToast('This route has already been completed!', 'error');
+            return;
+        }
+
+        if (gameData.failedRoutes.some(failed => failed.route === route)) {
+            showToast('This route has already been marked as failed!', 'error');
+            return;
+        }
+
+        // NEW: Check for duplicate Pokemon on same route
+        const normalizedPokemonName = normalizePokemonNameForAPI(pokemonName);
+        
+        const isDuplicate = gameData.player.caught.some(caught => 
+            caught.route === route && 
+            normalizePokemonNameForAPI(caught.name) === normalizedPokemonName
+        );
+        
+        if (isDuplicate) {
+            showToast('This exact Pokemon already exists on this route!', 'warning');
+            return;
+        }
+
+        // Validate Pokemon is from correct generation
+        if (!isPokemonValidForGeneration(pokemonName, gameData.currentGeneration)) {
+            const genDisplay = gameData.isCustomRom
+                ? `your custom ROM (Gens ${gameData.customPokemonGens.join(', ')})`
+                : `Generation ${generationRomanNumerals[gameData.currentGeneration]}`;
+            showToast(`${pokemonName} is not available in ${genDisplay}!`, 'error');
+            return;
+        }
+
+        // Check evolution line restrictions
+        const evolutionCheck = isPokemonOrEvolutionCaught(pokemonName);
+        if (evolutionCheck.caught) {
+            showToast(`Cannot catch ${pokemonName} - already have ${evolutionCheck.caughtName} from same evolution line`, 'error');
+            return;
+        }
+
+        // Fetch Pokemon data with shiny status
+        const pokemonData = await getPokemonData(pokemonName, isShiny);
+
+        if (!pokemonData) {
+            showToast('Pokemon not found! Please check the spelling.', 'error');
+            return;
+        }
+
+        // Create Pokemon object
+        const pokemon = {
+            id: Date.now() + Math.random(),
+            route: route,
+            name: pokemonData.name,
+            displayName: pokemonData.displayName,
+            nickname: nickname || pokemonData.displayName,
+            sprite: pokemonData.sprite,
+            animatedSprite: pokemonData.animatedSprite,
+            types: pokemonData.types,
+            fainted: false,
+            failedToCache: false,
+            isShiny: isShiny
+        };
+
+        gameData.player.caught.push(pokemon);
+        gameData.usedRoutes.push(route);
+
+        document.getElementById('pokemon-name').value = '';
+        document.getElementById('pokemon-nickname').value = '';
+        document.getElementById('pokemon-shiny').checked = false;
+        document.getElementById('current-route').value = '';
+
+        saveData();
+        populateRoutes();
+        renderAll();
+        updateRouteSelector();
+        updateCounts();
+
+        const shinyText = isShiny ? ' ✨' : '';
+        showToast(`Caught ${pokemon.nickname} on ${route}${shinyText}`, 'success');
+        
+    } catch (error) {
+        console.error('Error adding Pokemon:', error);
+        showToast('An error occurred while adding Pokemon. Please try again.', 'error');
+    } finally {
+        // Re-enable buttons and restore text
+        addButton.disabled = false;
+        failedButton.disabled = false;
+        addButton.textContent = originalButtonText;
     }
-
-    if (!pokemonName) {
-        showToast('Please enter a Pokemon name', 'error');
-        return;
-    }
-
-    if (gameData.usedRoutes.includes(route)) {
-        showToast('This route has already been completed!', 'error');
-        return;
-    }
-
-    if (gameData.failedRoutes.some(failed => failed.route === route)) {
-        showToast('This route has already been marked as failed!', 'error');
-        return;
-    }
-
-    // Validate Pokemon is from correct generation
-    if (!isPokemonValidForGeneration(pokemonName, gameData.currentGeneration)) {
-        const genDisplay = gameData.isCustomRom
-            ? `your custom ROM (Gens ${gameData.customPokemonGens.join(', ')})`
-            : `Generation ${generationRomanNumerals[gameData.currentGeneration]}`;
-        showToast(`${pokemonName} is not available in ${genDisplay}!`, 'error');
-        return;
-    }
-
-    // Check evolution line restrictions
-    const evolutionCheck = isPokemonOrEvolutionCaught(pokemonName);
-    if (evolutionCheck.caught) {
-        showToast(`Cannot catch ${pokemonName} - already have ${evolutionCheck.caughtName} from same evolution line`, 'error');
-        return;
-    }
-
-    // Fetch Pokemon data with shiny status
-    const pokemonData = await getPokemonData(pokemonName, isShiny);
-
-    if (!pokemonData) {
-        showToast('Pokemon not found! Please check the spelling.', 'error');
-        return;
-    }
-
-    // Create Pokemon object
-    const pokemon = {
-        id: Date.now() + Math.random(),
-        route: route,
-        name: pokemonData.name,
-        displayName: pokemonData.displayName,
-        nickname: nickname || pokemonData.displayName,
-        sprite: pokemonData.sprite,
-        animatedSprite: pokemonData.animatedSprite,
-        types: pokemonData.types,
-        fainted: false,
-        failedToCache: false,
-        isShiny: isShiny
-    };
-
-    gameData.player.caught.push(pokemon);
-    gameData.usedRoutes.push(route);
-
-    document.getElementById('pokemon-name').value = '';
-    document.getElementById('pokemon-nickname').value = '';
-    document.getElementById('pokemon-shiny').checked = false;
-    document.getElementById('current-route').value = '';
-
-    saveData();
-    populateRoutes();
-    renderAll();
-    updateRouteSelector();
-    updateCounts();
-
-    const shinyText = isShiny ? ' ✨' : '';
-    showToast(`Caught ${pokemon.nickname} on ${route}${shinyText}`, 'success');
 }
+
 
 // Render all UI elements
 function renderAll() {
