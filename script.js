@@ -9,20 +9,27 @@ let gameData = {
     usedRoutes: [],
     failedRoutes: [],
     playerName: 'Trainer',
-    currentGame: null, // Will be set by generation selector
-    currentGeneration: null, // Track the generation
-    gymProgress: {} // Track gym leader progress by game
+    currentGame: null,
+    currentGeneration: null,
+    gymProgress: {},
+    // Custom ROM support
+    isCustomRom: false,
+    customPokemonGens: []
 };
 
 // Carousel state
 let currentCarouselIndex = 0;
-let totalCarouselSlides = 7;
+let totalCarouselSlides = 8;
 
 // Current gym progress tab
 let currentGymTab = 'gymLeaders';
 
 // Gym tracker expanded state
 let gymTrackerExpanded = false;
+
+// Custom ROM selection state
+let customSelectedGame = null;
+let customSelectedPokemonGens = [];
 
 // Confetti Animation Functions
 function createConfetti() {
@@ -520,6 +527,100 @@ function testToast() {
     setTimeout(() => showToast('Test warning message! ⚠️', 'warning'), 3000);
 }
 
+function normalizePokemonNameForAPI(name) {
+    let normalized = name.toLowerCase().trim().replace(/'/g, '');
+
+    // Special cases that need hyphens
+    const specialCases = {
+        'mr. mime': 'mr-mime',
+        'mrmime': 'mr-mime',
+        'mime jr.': 'mime-jr',
+        'mimejr': 'mime-jr',
+        'mr mime': 'mr-mime',
+        'mime jr': 'mime-jr',
+        'type: null': 'type-null',
+        'typenull': 'type-null',
+        'type null': 'type-null',
+        'tapu koko': 'tapu-koko',
+        'tapukoko': 'tapu-koko',
+        'tapu lele': 'tapu-lele',
+        'tapulele': 'tapu-lele',
+        'tapu bulu': 'tapu-bulu',
+        'tapubulu': 'tapu-bulu',
+        'tapu fini': 'tapu-fini',
+        'tapufini': 'tapu-fini',
+        'jangmo-o': 'jangmo-o',
+        'jangmoo': 'jangmo-o',
+        'hakamo-o': 'hakamo-o',
+        'hakamoo': 'hakamo-o',
+        'kommo-o': 'kommo-o',
+        'kommoo': 'kommo-o',
+        'porygon-z': 'porygon-z',
+        'porygonz': 'porygon-z',
+        'ho-oh': 'ho-oh',
+        'hooh': 'ho-oh',
+        'flabébé': 'flabebe',
+        'flabebe': 'flabebe'
+    };
+
+    if (specialCases[normalized]) {
+        return specialCases[normalized];
+    }
+
+    // Pokemon with forms - default to their base form
+    const formBasedPokemon = {
+        'deoxys': 'deoxys-normal',
+        'wormadam': 'wormadam-plant',
+        'giratina': 'giratina-altered',
+        'shaymin': 'shaymin-land',
+        'basculin': 'basculin-red-striped',
+        'darmanitan': 'darmanitan-standard',
+        'tornadus': 'tornadus-incarnate',
+        'thundurus': 'thundurus-incarnate',
+        'landorus': 'landorus-incarnate',
+        'keldeo': 'keldeo-ordinary',
+        'meloetta': 'meloetta-aria',
+        'meowstic': 'meowstic-male',
+        'aegislash': 'aegislash-shield',
+        'pumpkaboo': 'pumpkaboo-average',
+        'gourgeist': 'gourgeist-average',
+        'oricorio': 'oricorio-baile',
+        'lycanroc': 'lycanroc-midday',
+        'wishiwashi': 'wishiwashi-solo',
+        'minior': 'minior-red-meteor',
+        'mimikyu': 'mimikyu-disguised',
+        'necrozma': 'necrozma'
+    };
+
+    // For Alolan forms
+    if (normalized.includes('-alola') || normalized.includes('alola')) {
+        normalized = normalized.replace(/\s+/g, '-');
+        if (!normalized.includes('-alola')) {
+            normalized = normalized.replace('alola', '-alola');
+        }
+    }
+
+    // Clean up any remaining special characters
+    normalized = normalized.replace(/[^a-z0-9-]/g, '');
+
+    // Handle Nidoran gender symbols
+    if (normalized.includes('nidoran')) {
+        if (name.includes('♀') || name.toLowerCase().includes('female') || name.includes('-f')) {
+            return 'nidoran-f';
+        } else if (name.includes('♂') || name.toLowerCase().includes('male') || name.includes('-m')) {
+            return 'nidoran-m';
+        }
+    }
+
+    // Check if this Pokemon needs a form specified
+    if (formBasedPokemon[normalized]) {
+        return formBasedPokemon[normalized];
+    }
+
+    return normalized;
+}
+
+
 // Track selected generation during setup
 let selectedGeneration = null;
 let selectedGame = null;
@@ -577,6 +678,13 @@ const generationData = [
         fullName: 'Generation VII',
         games: 'Sun/Moon & USUM',
         artwork: 'generationImages/gen7.png'
+    },
+    {
+        id: 'custom',
+        name: 'Custom',
+        fullName: 'Custom ROM Hack',
+        games: 'Select your game & Pokemon',
+        artwork: 'generationImages/custom.png'
     }
 ];
 
@@ -591,10 +699,150 @@ const generationRomanNumerals = {
     7: 'VII'
 };
 
+function showCustomRomSelector() {
+    const container = document.getElementById('game-select-container');
+    container.style.display = 'block';
+
+    container.innerHTML = `
+        <h3 style="color: #1c4466; margin-bottom: 10px; font-size: 12px;">Custom ROM Setup</h3>
+        
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-size: 10px; color: #1c4466;">
+                Select Base Game (for routes & gym leaders):
+            </label>
+            <select id="custom-game-select" style="width: 100%; padding: 8px; font-family: 'Press Start 2P', monospace; font-size: 9px; border: 2px solid #4a9de8; background: #fff; color: #1c4466; border-radius: 4px;">
+                <option value="">Choose a game...</option>
+                ${getAllGamesForCustom().map(game =>
+        `<option value="${game.key}">${game.name} (Gen ${game.generation})</option>`
+    ).join('')}
+            </select>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 10px; color: #1c4466;">
+                Select Pokemon Generations Available:
+            </label>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                ${[1, 2, 3, 4, 5, 6, 7].map(gen => `
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 8px; color: #1c4466;">
+                        <input type="checkbox" class="gen-checkbox" value="${gen}" 
+                               style="width: 16px; height: 16px; cursor: pointer;">
+                        Gen ${generationRomanNumerals[gen]}
+                    </label>
+                `).join('')}
+            </div>
+            <button onclick="selectAllGenerations()" 
+                    style="margin-top: 8px; padding: 6px 12px; background: #4a9de8; color: white; 
+                           border: 2px solid #2e7dd2; border-radius: 4px; cursor: pointer; 
+                           font-family: 'Press Start 2P', monospace; font-size: 7px; transition: all 0.2s;">
+                Select All Generations
+            </button>
+        </div>
+        
+        <div style="font-size: 7px; color: #666; margin-top: 10px; padding: 8px; background: #f0f8ff; border: 2px solid #4a9de8; border-radius: 4px;">
+            Selected: <span id="custom-summary" style="font-weight: bold;">None</span>
+        </div>
+    `;
+
+    document.getElementById('custom-game-select').addEventListener('change', updateCustomRomSelection);
+    document.querySelectorAll('.gen-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateCustomRomSelection);
+    });
+
+    updateCustomRomSelection();
+}
+
+function getAllGamesForCustom() {
+    const games = [];
+    for (const [key, value] of Object.entries(gameRoutes)) {
+        games.push({ key, ...value });
+    }
+    return games.sort((a, b) => a.generation - b.generation);
+}
+
+function selectAllGenerations() {
+    document.querySelectorAll('.gen-checkbox').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    updateCustomRomSelection();
+}
+
+function updateCustomRomSelection() {
+    const gameSelect = document.getElementById('custom-game-select');
+    const genCheckboxes = document.querySelectorAll('.gen-checkbox:checked');
+
+    customSelectedGame = gameSelect ? gameSelect.value : null;
+    customSelectedPokemonGens = Array.from(genCheckboxes).map(cb => parseInt(cb.value)).sort((a, b) => a - b);
+
+    // Update Pokemon names in real-time as checkboxes change
+    if (customSelectedPokemonGens.length > 0) {
+        updatePokemonNamesForCustomRom(customSelectedPokemonGens);
+
+        // Also update evolution lines to match
+        const maxGen = Math.max(...customSelectedPokemonGens);
+        if (typeof updateEvolutionLinesForGeneration === 'function') {
+            updateEvolutionLinesForGeneration(maxGen);
+        }
+    } else {
+        // If no generations selected, clear Pokemon names
+        pokemonNames = [];
+    }
+
+    // Update summary
+    const summary = document.getElementById('custom-summary');
+    if (summary) {
+        if (customSelectedGame && customSelectedPokemonGens.length > 0) {
+            const gameName = gameRoutes[customSelectedGame]?.name || 'Unknown';
+            summary.textContent = `${gameName} with Gen ${customSelectedPokemonGens.join(', ')} Pokemon (${pokemonNames.length} total)`;
+            summary.style.color = '#1c4466';
+            summary.style.fontWeight = 'bold';
+        } else {
+            summary.textContent = 'Please select game and at least one generation';
+            summary.style.color = '#e74c3c';
+            summary.style.fontWeight = 'normal';
+        }
+    }
+
+    // Enable start button
+    const startBtn = document.getElementById('start-tracker');
+    if (customSelectedGame && customSelectedPokemonGens.length > 0) {
+        startBtn.disabled = false;
+        startBtn.style.background = 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)';
+        startBtn.style.borderColor = '#2c3e50';
+        startBtn.style.cursor = 'pointer';
+        selectedGame = customSelectedGame;
+        selectedGeneration = 'custom';
+    } else {
+        startBtn.disabled = true;
+        startBtn.style.background = '#95a5a6';
+        startBtn.style.borderColor = '#7f8c8d';
+        startBtn.style.cursor = 'not-allowed';
+    }
+}
+
+function updatePokemonNamesForCustomRom(generations) {
+    pokemonNames = [];
+    generations.sort((a, b) => a - b).forEach(gen => {
+        const genNames = pokemonNamesByGeneration[`gen${gen}`] || [];
+        pokemonNames = [...pokemonNames, ...genNames];
+    });
+
+    // Remove duplicates
+    pokemonNames = [...new Set(pokemonNames)];
+
+    console.log(`Custom ROM: ${pokemonNames.length} Pokemon available from gens ${generations.join(', ')}`);
+}
+
 // Validate if a Pokemon name is valid for the current generation
 function isPokemonValidForGeneration(pokemonName, generation) {
-    const cleanName = pokemonName.toLowerCase().trim();
-    const validNames = getPokemonNamesUpToGen(generation).map(name => name.toLowerCase());
+    const cleanName = normalizePokemonNameForAPI(pokemonName);
+
+    if (gameData.isCustomRom) {
+        const validNames = pokemonNames.map(name => normalizePokemonNameForAPI(name));
+        return validNames.includes(cleanName);
+    }
+
+    const validNames = getPokemonNamesUpToGen(generation).map(name => normalizePokemonNameForAPI(name));
     return validNames.includes(cleanName);
 }
 
@@ -603,13 +851,10 @@ function initializeCarousel() {
     const track = document.getElementById('carousel-track');
     const indicators = document.getElementById('carousel-indicators');
 
-    // Clear existing content
     track.innerHTML = '';
     indicators.innerHTML = '';
 
-    // Create slides
     generationData.forEach((gen, index) => {
-        // Create slide
         const slide = document.createElement('div');
         slide.className = `carousel-slide ${index === 0 ? 'active' : ''}`;
         slide.onclick = () => selectGeneration(gen.id);
@@ -618,7 +863,7 @@ function initializeCarousel() {
             <img src="${gen.artwork}" 
                  alt="${gen.fullName}" 
                  class="generation-artwork"
-                 onerror="this.src='https://via.placeholder.com/120x120/78c850/ffffff?text=Gen+${gen.roman}'">
+                 onerror="this.src='https://via.placeholder.com/120x120/78c850/ffffff?text=${gen.name}'">
             <div class="generation-info">
                 <div class="generation-name">${gen.fullName}</div>
                 <div class="generation-games">${gen.games}</div>
@@ -627,7 +872,6 @@ function initializeCarousel() {
 
         track.appendChild(slide);
 
-        // Create indicator dot
         const dot = document.createElement('div');
         dot.className = `carousel-dot ${index === 0 ? 'active' : ''}`;
         dot.onclick = () => goToSlide(index);
@@ -638,10 +882,8 @@ function initializeCarousel() {
     totalCarouselSlides = generationData.length;
     updateCarouselPosition();
 
-    // Properly select the initial generation (Generation 1) with a small delay to ensure DOM is ready
-    setTimeout(() => {
-        selectGeneration(generationData[0].id);
-    }, 100);
+    // Select Gen 1 immediately without delay
+    selectGeneration(generationData[0].id);
 }
 
 // Update carousel position
@@ -650,10 +892,8 @@ function updateCarouselPosition() {
     const slides = track.querySelectorAll('.carousel-slide');
     const dots = document.querySelectorAll('.carousel-dot');
 
-    // Update track position
     track.style.transform = `translateX(-${currentCarouselIndex * 100}%)`;
 
-    // Update active states
     slides.forEach((slide, index) => {
         slide.classList.toggle('active', index === currentCarouselIndex);
     });
@@ -668,7 +908,6 @@ function previousGeneration() {
     currentCarouselIndex = (currentCarouselIndex - 1 + totalCarouselSlides) % totalCarouselSlides;
     updateCarouselPosition();
 
-    // Always update the game options when cycling through
     const currentGen = generationData[currentCarouselIndex];
     updateGameOptionsForGeneration(currentGen.id);
 }
@@ -678,7 +917,6 @@ function nextGeneration() {
     currentCarouselIndex = (currentCarouselIndex + 1) % totalCarouselSlides;
     updateCarouselPosition();
 
-    // Always update the game options when cycling through
     const currentGen = generationData[currentCarouselIndex];
     updateGameOptionsForGeneration(currentGen.id);
 }
@@ -688,54 +926,21 @@ function goToSlide(index) {
     currentCarouselIndex = index;
     updateCarouselPosition();
 
-    // Update the game options for the selected generation
     const currentGen = generationData[currentCarouselIndex];
     updateGameOptionsForGeneration(currentGen.id);
 }
 
 // Update game options for a generation and auto-select when appropriate
 function updateGameOptionsForGeneration(gen) {
-    // Auto-select this generation when browsing
     selectedGeneration = gen;
 
-    // Update Pokemon names immediately for autocomplete
-    updatePokemonNamesForGeneration(gen);
-
-    // Show game options
-    const gameContainer = document.getElementById('game-select-container');
-    const gameOptions = document.getElementById('game-options');
-    gameContainer.style.display = 'block';
-
-    const games = getGamesForGeneration(gen);
-    gameOptions.innerHTML = '';
-
-    games.forEach(game => {
-        const btn = document.createElement('button');
-        btn.className = 'game-option-btn';
-        btn.textContent = game.name;
-        btn.onclick = () => selectGame(game.key);
-        gameOptions.appendChild(btn);
-    });
-
-    // Update evolution lines for preview
-    if (typeof updateEvolutionLinesForGeneration === 'function') {
-        updateEvolutionLinesForGeneration(gen);
+    if (gen === 'custom') {
+        showCustomRomSelector();
+        return;
     }
 
-    // If there's only one game for this generation, auto-select it
-    if (games.length === 1) {
-        // Use setTimeout to ensure DOM is ready before selecting
-        setTimeout(() => {
-            selectGame(games[0].key);
-        }, 0);
-    } else {
-        // Reset game selection state for multiple games
-        selectedGame = null;
-        document.querySelectorAll('.game-option-btn').forEach(btn => {
-            btn.classList.remove('selected');
-        });
-        document.getElementById('start-tracker').disabled = true;
-    }
+    // For normal generations, just call selectGeneration
+    selectGeneration(gen);
 }
 
 // Get available games for a generation
@@ -753,23 +958,39 @@ function getGamesForGeneration(generation) {
 function selectGeneration(gen) {
     selectedGeneration = gen;
 
-    // Update Pokemon names immediately for autocomplete
+    const gameContainer = document.getElementById('game-select-container');
+
+    if (gen === 'custom') {
+        const genIndex = generationData.findIndex(g => g.id === 'custom');
+        if (genIndex !== -1 && genIndex !== currentCarouselIndex) {
+            currentCarouselIndex = genIndex;
+            updateCarouselPosition();
+        }
+        showCustomRomSelector();
+        return;
+    }
+
+    // IMPORTANT: For normal generations, completely clear the container first
+    gameContainer.innerHTML = '';
+    gameContainer.style.display = 'none';
+
+    // Now proceed with normal generation setup
     updatePokemonNamesForGeneration(gen);
 
-    // Update carousel position to match selection
     const genIndex = generationData.findIndex(g => g.id === gen);
     if (genIndex !== -1 && genIndex !== currentCarouselIndex) {
         currentCarouselIndex = genIndex;
         updateCarouselPosition();
     }
 
-    // Show game options
-    const gameContainer = document.getElementById('game-select-container');
-    const gameOptions = document.getElementById('game-options');
     gameContainer.style.display = 'block';
+    gameContainer.innerHTML = `
+        <h3 style="color: #2a5834; margin-bottom: 10px; font-size: 12px;">Select Your Game:</h3>
+        <div id="game-options" class="game-options"></div>
+    `;
 
+    const gameOptions = document.getElementById('game-options');
     const games = getGamesForGeneration(gen);
-    gameOptions.innerHTML = '';
 
     games.forEach(game => {
         const btn = document.createElement('button');
@@ -779,16 +1000,13 @@ function selectGeneration(gen) {
         gameOptions.appendChild(btn);
     });
 
-    // Update evolution lines for the selected generation
     if (typeof updateEvolutionLinesForGeneration === 'function') {
         updateEvolutionLinesForGeneration(gen);
     }
 
-    // If there's only one game for this generation, auto-select it
     if (games.length === 1) {
         selectGame(games[0].key);
     } else {
-        // Reset game selection
         selectedGame = null;
         document.getElementById('start-tracker').disabled = true;
     }
@@ -800,7 +1018,6 @@ function selectGeneration(gen) {
 function selectGame(gameKey) {
     selectedGame = gameKey;
 
-    // Update UI
     document.querySelectorAll('.game-option-btn').forEach(btn => {
         btn.classList.remove('selected');
         if (btn.textContent === gameRoutes[gameKey].name) {
@@ -808,7 +1025,6 @@ function selectGame(gameKey) {
         }
     });
 
-    // Enable start button
     document.getElementById('start-tracker').disabled = false;
 }
 
@@ -816,28 +1032,42 @@ function selectGame(gameKey) {
 function startTracker() {
     if (!selectedGeneration || !selectedGame) return;
 
-    gameData.currentGeneration = selectedGeneration;
-    gameData.currentGame = selectedGame;
+    // Custom ROM handling
+    if (selectedGeneration === 'custom') {
+        gameData.currentGeneration = 'custom';
+        gameData.currentGame = selectedGame;
+        gameData.isCustomRom = true;
+        gameData.customPokemonGens = customSelectedPokemonGens;
 
-    // Update Pokemon names and evolution lines
-    updatePokemonNamesForGeneration(selectedGeneration);
-    if (typeof updateEvolutionLinesForGeneration === 'function') {
-        updateEvolutionLinesForGeneration(selectedGeneration);
+        updatePokemonNamesForCustomRom(customSelectedPokemonGens);
+
+        const maxGen = Math.max(...customSelectedPokemonGens);
+        if (typeof updateEvolutionLinesForGeneration === 'function') {
+            updateEvolutionLinesForGeneration(maxGen);
+        }
+    } else {
+        // Existing normal generation code
+        gameData.currentGeneration = selectedGeneration;
+        gameData.currentGame = selectedGame;
+        gameData.isCustomRom = false;
+        gameData.customPokemonGens = [];
+
+        updatePokemonNamesForGeneration(selectedGeneration);
+        if (typeof updateEvolutionLinesForGeneration === 'function') {
+            updateEvolutionLinesForGeneration(selectedGeneration);
+        }
     }
 
     saveData();
-
-    // Hide modal
     document.getElementById('generation-selector-modal').style.display = 'none';
-
-    // Initialize the main app
     initializeApp();
-
-    // Refresh autocomplete to ensure it uses the correct generation
     refreshAutocomplete();
 
-    // Show welcome toast
-    showToast(`Started tracking Generation ${generationRomanNumerals[selectedGeneration]} - ${gameRoutes[selectedGame].name}!`, 'success');
+    const genDisplay = gameData.isCustomRom
+        ? `Custom ROM (Gens ${customSelectedPokemonGens.join(', ')})`
+        : `Generation ${generationRomanNumerals[selectedGeneration]}`;
+
+    showToast(`Started tracking ${genDisplay} - ${gameRoutes[selectedGame].name}!`, 'success');
 }
 
 // Get current routes based on selected game
@@ -882,7 +1112,11 @@ function switchGame() {
 // Update generation display badge
 function updateGenerationDisplay() {
     const display = document.getElementById('generation-display');
-    if (gameData.currentGeneration) {
+
+    // Custom ROM/generation display
+    if (gameData.isCustomRom) {
+        display.textContent = `Custom (Gens ${gameData.customPokemonGens.join(', ')})`;
+    } else if (gameData.currentGeneration) {
         display.textContent = `Gen ${generationRomanNumerals[gameData.currentGeneration]}`;
     } else {
         display.textContent = '';
@@ -943,7 +1177,7 @@ function getSpriteUrl(pokemonName, generation = null) {
 
 // Fetch Pokemon data from PokeAPI with generation awareness
 async function getPokemonData(name, isShiny = false) {
-    const cleanName = name.toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+    const cleanName = normalizePokemonNameForAPI(name);
 
     const cacheKey = `${cleanName}_${isShiny ? 'shiny' : 'normal'}`;
     if (pokemonCache[cacheKey]) {
@@ -953,13 +1187,14 @@ async function getPokemonData(name, isShiny = false) {
     try {
         const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${cleanName}`);
         if (!response.ok) {
+            console.error(`PokeAPI error for "${name}" (normalized to "${cleanName}"): ${response.status}`);
             throw new Error('Pokemon not found');
         }
 
         const data = await response.json();
         const pokemonData = {
             name: data.name,
-            displayName: data.name.charAt(0).toUpperCase() + data.name.slice(1),
+            displayName: name.charAt(0).toUpperCase() + name.slice(1), // Use original name for display
             sprite: isShiny ? (data.sprites.front_shiny || data.sprites.front_default) : data.sprites.front_default,
             animatedSprite: isShiny ?
                 (data.sprites.versions?.['generation-v']?.['black-white']?.animated?.front_shiny ||
@@ -971,9 +1206,8 @@ async function getPokemonData(name, isShiny = false) {
             isShiny: isShiny
         };
 
-        // Try to get generation-specific sprite
         const gen = gameData.currentGeneration;
-        if (gen) {
+        if (gen && gen !== 'custom') {
             const genSprites = getGenerationSpecificSprite(data.sprites, gen, isShiny);
             if (genSprites) {
                 pokemonData.sprite = genSprites;
@@ -983,7 +1217,7 @@ async function getPokemonData(name, isShiny = false) {
         pokemonCache[cacheKey] = pokemonData;
         return pokemonData;
     } catch (error) {
-        console.error('Error fetching Pokemon:', error);
+        console.error(`Error fetching Pokemon "${name}" (normalized to "${cleanName}"):`, error);
         return null;
     }
 }
@@ -1035,14 +1269,14 @@ function getGenerationSpecificSprite(sprites, generation, isShiny = false) {
 
 // Check if a Pokemon or any from its evolution line is already caught
 function isPokemonOrEvolutionCaught(pokemonName) {
-    const cleanName = pokemonName.toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+    const cleanName = normalizePokemonNameForAPI(pokemonName);
 
     // Get the evolution line for this Pokemon
     const evolutionLine = evolutionLines[cleanName] || [cleanName];
 
     // Check if any Pokemon in the evolution line is already caught
     for (let caught of gameData.player.caught) {
-        const caughtCleanName = caught.name.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const caughtCleanName = normalizePokemonNameForAPI(caught.name);
         if (evolutionLine.includes(caughtCleanName)) {
             return {
                 caught: true,
@@ -1143,7 +1377,6 @@ function updateCounts() {
 function updatePokemonNamesForGeneration(generation) {
     pokemonNames = getPokemonNamesUpToGen(generation);
 
-    // Clear any existing autocomplete dropdowns to force refresh
     const dropdowns = document.querySelectorAll('.autocomplete-dropdown');
     dropdowns.forEach(dropdown => {
         dropdown.style.display = 'none';
@@ -1155,14 +1388,12 @@ function updatePokemonNamesForGeneration(generation) {
 
 // Add a helper function to refresh autocomplete after generation changes
 function refreshAutocomplete() {
-    // Clear existing autocomplete dropdowns
     const dropdowns = document.querySelectorAll('.autocomplete-dropdown');
     dropdowns.forEach(dropdown => {
         dropdown.style.display = 'none';
         dropdown.innerHTML = '';
     });
 
-    // Clear input values if they contain invalid Pokemon for current generation
     const pokemonInput = document.getElementById('pokemon-name');
 
     if (pokemonInput && pokemonInput.value) {
@@ -1365,18 +1596,19 @@ async function addFailedEncounter() {
 
     // Validate Pokemon is from correct generation
     if (!isPokemonValidForGeneration(pokemonName, gameData.currentGeneration)) {
-        showToast(`${pokemonName} is not available in Generation ${generationRomanNumerals[gameData.currentGeneration]}!`, 'error');
+        const genDisplay = gameData.isCustomRom
+            ? `your custom ROM (Gens ${gameData.customPokemonGens.join(', ')})`
+            : `Generation ${generationRomanNumerals[gameData.currentGeneration]}`;
+        showToast(`${pokemonName} is not available in ${genDisplay}!`, 'error');
         return;
     }
 
-    // Check evolution line restrictions
     const evolutionCheck = isPokemonOrEvolutionCaught(pokemonName);
     if (evolutionCheck.caught) {
         showToast(`Cannot encounter ${pokemonName} - already have ${evolutionCheck.caughtName} from same evolution line`, 'error');
         return;
     }
 
-    // Fetch Pokemon data with shiny status
     const pokemonData = await getPokemonData(pokemonName, isShiny);
 
     if (!pokemonData) {
@@ -1384,7 +1616,6 @@ async function addFailedEncounter() {
         return;
     }
 
-    // Create failed encounter object
     const failedPokemon = {
         id: Date.now() + Math.random(),
         route: route,
@@ -1395,14 +1626,12 @@ async function addFailedEncounter() {
         animatedSprite: pokemonData.animatedSprite,
         types: pokemonData.types,
         fainted: false,
-        failedToCache: true, // Mark as failed to catch
+        failedToCache: true,
         isShiny: isShiny
     };
 
-    // Add to caught list
     gameData.player.caught.push(failedPokemon);
 
-    // Create a failed route record
     const failedRoute = {
         route: route,
         pokemon: failedPokemon,
@@ -1411,7 +1640,6 @@ async function addFailedEncounter() {
 
     gameData.failedRoutes.push(failedRoute);
 
-    // Clear inputs
     document.getElementById('pokemon-name').value = '';
     document.getElementById('pokemon-nickname').value = '';
     document.getElementById('pokemon-shiny').checked = false;
@@ -1456,7 +1684,10 @@ async function addPokemon() {
 
     // Validate Pokemon is from correct generation
     if (!isPokemonValidForGeneration(pokemonName, gameData.currentGeneration)) {
-        showToast(`${pokemonName} is not available in Generation ${generationRomanNumerals[gameData.currentGeneration]}!`, 'error');
+        const genDisplay = gameData.isCustomRom
+            ? `your custom ROM (Gens ${gameData.customPokemonGens.join(', ')})`
+            : `Generation ${generationRomanNumerals[gameData.currentGeneration]}`;
+        showToast(`${pokemonName} is not available in ${genDisplay}!`, 'error');
         return;
     }
 
@@ -1490,13 +1721,9 @@ async function addPokemon() {
         isShiny: isShiny
     };
 
-    // Add to caught list
     gameData.player.caught.push(pokemon);
-
-    // Mark route as used
     gameData.usedRoutes.push(route);
 
-    // Clear inputs
     document.getElementById('pokemon-name').value = '';
     document.getElementById('pokemon-nickname').value = '';
     document.getElementById('pokemon-shiny').checked = false;
@@ -1893,16 +2120,35 @@ function loadData() {
             gameData = {
                 ...gameData,
                 ...loaded,
-                // Ensure all properties exist
                 usedRoutes: loaded.usedRoutes || [],
                 failedRoutes: loaded.failedRoutes || [],
                 playerName: loaded.playerName || 'Trainer',
                 currentGame: loaded.currentGame,
                 currentGeneration: loaded.currentGeneration,
-                gymProgress: loaded.gymProgress || {} // Load gym progress
+                gymProgress: loaded.gymProgress || {},
+                // Handle custom ROM properties
+                isCustomRom: loaded.isCustomRom || false,
+                customPokemonGens: loaded.customPokemonGens || []
             };
 
-            // Add backwards compatibility properties
+            // Handle custom ROM on load
+            if (gameData.isCustomRom && gameData.customPokemonGens.length > 0) {
+                updatePokemonNamesForCustomRom(gameData.customPokemonGens);
+
+                const maxGen = Math.max(...gameData.customPokemonGens);
+                if (typeof updateEvolutionLinesForGeneration === 'function') {
+                    updateEvolutionLinesForGeneration(maxGen);
+                }
+
+                console.log(`Loaded custom ROM with gens ${gameData.customPokemonGens.join(', ')}`);
+            } else if (gameData.currentGeneration) {
+                updatePokemonNamesForGeneration(gameData.currentGeneration);
+                if (typeof updateEvolutionLinesForGeneration === 'function') {
+                    updateEvolutionLinesForGeneration(gameData.currentGeneration);
+                }
+            }
+
+            // Backwards compatibility
             if (gameData.player && gameData.player.caught) {
                 gameData.player.caught.forEach(pokemon => {
                     if (pokemon.fainted === undefined) {
@@ -1935,15 +2181,34 @@ function clearAllData() {
             playerName: 'Trainer',
             currentGame: null,
             currentGeneration: null,
-            gymProgress: {}
+            gymProgress: {},
+            isCustomRom: false,
+            customPokemonGens: []
         };
-        saveData();
 
-        // Show generation selector again
-        initializeCarousel();
-        document.getElementById('generation-selector-modal').style.display = 'flex';
+        // Reset custom ROM state variables
+        customSelectedGame = null;
+        customSelectedPokemonGens = [];
         selectedGeneration = null;
         selectedGame = null;
+
+        // Reset carousel position
+        currentCarouselIndex = 0;
+
+        saveData();
+
+        // IMPORTANT: Clear the game container BEFORE showing modal
+        const gameContainer = document.getElementById('game-select-container');
+        if (gameContainer) {
+            gameContainer.innerHTML = '';
+            gameContainer.style.display = 'none';
+        }
+
+        // Show generation selector modal
+        document.getElementById('generation-selector-modal').style.display = 'flex';
+
+        // Initialize carousel which will trigger Gen 1 selection
+        initializeCarousel();
 
         showToast('All data cleared successfully!', 'info');
     }
@@ -1954,7 +2219,15 @@ function exportData() {
     const dataStr = JSON.stringify(gameData, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
 
-    const exportFileDefaultName = `nuzlocke-save-gen${gameData.currentGeneration}-${new Date().toISOString().split('T')[0]}.json`;
+    // Create more descriptive filename for custom ROMs
+    let genPart;
+    if (gameData.isCustomRom) {
+        genPart = `custom-gen${gameData.customPokemonGens.join('-')}`;
+    } else {
+        genPart = `gen${gameData.currentGeneration}`;
+    }
+
+    const exportFileDefaultName = `nuzlocke-save-${genPart}-${new Date().toISOString().split('T')[0]}.json`;
 
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
@@ -1989,22 +2262,29 @@ document.addEventListener('DOMContentLoaded', function () {
                             playerName: imported.playerName || 'Trainer',
                             currentGame: imported.currentGame || 'hoenn_gen3',
                             currentGeneration: imported.currentGeneration || 3,
-                            gymProgress: imported.gymProgress || {} // Import gym progress
+                            gymProgress: imported.gymProgress || {},
+                            // Handle custom ROM properties
+                            isCustomRom: imported.isCustomRom || false,
+                            customPokemonGens: imported.customPokemonGens || []
                         };
 
-                        // Update Pokemon names and evolution lines based on imported generation
-                        updatePokemonNamesForGeneration(gameData.currentGeneration);
-                        if (typeof updateEvolutionLinesForGeneration === 'function') {
-                            updateEvolutionLinesForGeneration(gameData.currentGeneration);
+                        // Update Pokemon names based on imported setup
+                        if (gameData.isCustomRom && gameData.customPokemonGens.length > 0) {
+                            updatePokemonNamesForCustomRom(gameData.customPokemonGens);
+                            const maxGen = Math.max(...gameData.customPokemonGens);
+                            if (typeof updateEvolutionLinesForGeneration === 'function') {
+                                updateEvolutionLinesForGeneration(maxGen);
+                            }
+                        } else if (gameData.currentGeneration) {
+                            updatePokemonNamesForGeneration(gameData.currentGeneration);
+                            if (typeof updateEvolutionLinesForGeneration === 'function') {
+                                updateEvolutionLinesForGeneration(gameData.currentGeneration);
+                            }
                         }
 
-                        // Save data first
                         saveData();
-
-                        // Initialize the main app
                         initializeApp();
 
-                        // Force update streamer window after a brief delay to ensure all data is loaded
                         if (streamerWindow && !streamerWindow.closed) {
                             setTimeout(() => {
                                 updateStreamerWindow();
@@ -2022,11 +2302,11 @@ document.addEventListener('DOMContentLoaded', function () {
             };
             reader.readAsText(file);
 
-            // Reset the file input
             e.target.value = '';
         });
     }
 });
+
 
 // Edit player name function
 function editPlayerName() {
@@ -2402,15 +2682,19 @@ function setupStreamerWindow() {
                     gap: 4px;
                     flex-wrap: nowrap;
                     width: 100%;
+                    align-items: flex-start;
                 }
                 
                 .pokemon-slot {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    min-width: 60px;
+                    min-width: 32px;
+                    max-width: 120px;
                     position: relative;
                     transition: opacity 0.3s ease;
+                    flex-shrink: 1;
+                    flex-grow: 0;
                 }
                 
                 .pokemon-sprite {
@@ -2418,9 +2702,10 @@ function setupStreamerWindow() {
                     border: 1px solid rgba(255, 255, 255, 0.3);
                     border-radius: 4px;
                     background: rgba(255, 255, 255, 0.1);
-                    transition: border-color 0.3s ease;
+                    transition: border-color 0.3s ease, width 0.3s ease, height 0.3s ease;
                     position: relative;
                     z-index: 5;
+                    object-fit: contain;
                 }
                 
                 .sprite-small {
@@ -2444,12 +2729,9 @@ function setupStreamerWindow() {
                 }
                 
                 .sprite-auto {
-                    width: calc(8vw - 10px);
-                    height: calc(8vw - 10px);
-                    min-width: 32px;
-                    min-height: 32px;
-                    max-width: 100px;
-                    max-height: 100px;
+                    width: 48px;
+                    height: 48px;
+                    transition: width 0.3s ease, height 0.3s ease;
                 }
                 
                 .pokemon-name {
@@ -2460,6 +2742,23 @@ function setupStreamerWindow() {
                     overflow: hidden;
                     text-overflow: ellipsis;
                     white-space: nowrap;
+                }
+                
+                .sprite-auto + .pokemon-name {
+                    font-size: clamp(4px, 1.2vw, 8px);
+                }
+                
+                .sprite-small + .pokemon-name {
+                    font-size: 5px;
+                }
+                
+                .sprite-medium + .pokemon-name,
+                .sprite-large + .pokemon-name {
+                    font-size: 6px;
+                }
+                
+                .sprite-xl + .pokemon-name {
+                    font-size: 7px;
                 }
                 
                 .pokemon-types {
@@ -2479,9 +2778,12 @@ function setupStreamerWindow() {
                     text-align: center;
                 }
                 
+                .sprite-auto ~ .pokemon-types .type-badge {
+                    font-size: clamp(3px, 0.8vw, 5px);
+                    padding: 1px 2px;
+                }
+                
                 .empty-slot {
-                    width: 48px;
-                    height: 48px;
                     border: 1px dashed rgba(255, 255, 255, 0.3);
                     border-radius: 4px;
                     background: rgba(255, 255, 255, 0.05);
@@ -2490,7 +2792,9 @@ function setupStreamerWindow() {
                     justify-content: center;
                     font-size: 6px;
                     color: rgba(255, 255, 255, 0.5);
-                    transition: border-color 0.3s ease;
+                    transition: border-color 0.3s ease, width 0.3s ease, height 0.3s ease;
+                    text-align: center;
+                    word-wrap: break-word;
                 }
                 
                 .fainted {
@@ -2512,6 +2816,24 @@ function setupStreamerWindow() {
                     font-size: 4px;
                     border-radius: 4px;
                     z-index: 10;
+                }
+                
+                /* Shiny Pokemon styles */
+                .shiny-pokemon { 
+                    position: relative; 
+                }
+                .shiny-pokemon::before {
+                    content: '✨';
+                    position: absolute;
+                    top: -5px;
+                    right: -5px;
+                    font-size: 8px;
+                    z-index: 20;
+                    animation: sparkleFloat 1.5s ease-in-out infinite alternate;
+                }
+                @keyframes sparkleFloat {
+                    0% { transform: translateY(0px) rotate(0deg); }
+                    100% { transform: translateY(-2px) rotate(10deg); }
                 }
                 
                 /* Type colors */
@@ -2590,6 +2912,7 @@ function setupStreamerWindow() {
                 let hideTimeout;
                 let isControlsVisible = true;
                 
+                // Auto-hide controls functionality
                 function initializeAutoHide() {
                     const themeSelector = document.getElementById('theme-selector-container');
                     
@@ -2633,6 +2956,81 @@ function setupStreamerWindow() {
                     resetHideTimer();
                 }
                 
+                // Calculate optimal auto scale size
+                function calculateAutoScale() {
+                    const teamContainer = document.querySelector('.team-pokemon');
+                    if (!teamContainer) return;
+                    
+                    // Get container dimensions
+                    const containerRect = teamContainer.getBoundingClientRect();
+                    const containerWidth = containerRect.width;
+                    const containerHeight = containerRect.height;
+                    
+                    // Account for gaps between 6 slots (5 gaps of 4px each = 20px total)
+                    const availableWidth = containerWidth - 20;
+                    const availableHeight = containerHeight - 40; // Leave space for text
+                    
+                    // Calculate optimal size based on fitting 6 slots horizontally
+                    const maxWidthBasedSize = Math.floor(availableWidth / 6);
+                    const maxHeightBasedSize = availableHeight * 0.6; // Use 60% of height for sprite
+                    
+                    // Use the smaller of the two to ensure everything fits
+                    let optimalSize = Math.min(maxWidthBasedSize, maxHeightBasedSize);
+                    
+                    // Apply constraints
+                    optimalSize = Math.max(32, Math.min(120, optimalSize)); // Min 32px, Max 120px
+                    
+                    // Apply the calculated size
+                    const autoSprites = document.querySelectorAll('.sprite-auto');
+                    autoSprites.forEach(element => {
+                        element.style.width = optimalSize + 'px';
+                        element.style.height = optimalSize + 'px';
+                    });
+                }
+                
+                // Enhanced sprite size change function with improved auto-scaling
+                function changeSpriteSize(sizeKey) {
+                    const sprites = document.querySelectorAll('.pokemon-sprite');
+                    const emptySlots = document.querySelectorAll('.empty-slot');
+                    
+                    // Remove all size classes from sprites
+                    sprites.forEach(sprite => {
+                        sprite.classList.remove('sprite-small', 'sprite-medium', 'sprite-large', 'sprite-xl', 'sprite-auto');
+                        sprite.classList.add('sprite-' + sizeKey);
+                    });
+                    
+                    // Handle empty slots
+                    emptySlots.forEach(slot => {
+                        slot.classList.remove('sprite-small', 'sprite-medium', 'sprite-large', 'sprite-xl', 'sprite-auto');
+                        slot.classList.add('sprite-' + sizeKey);
+                        
+                        if (sizeKey !== 'auto') {
+                            const sizes = {
+                                'small': '40px',
+                                'medium': '48px',
+                                'large': '64px',
+                                'xl': '80px'
+                            };
+                            slot.style.width = sizes[sizeKey];
+                            slot.style.height = sizes[sizeKey];
+                        } else {
+                            // For auto scale, let CSS handle initial sizing
+                            slot.style.width = '';
+                            slot.style.height = '';
+                        }
+                    });
+                    
+                    // For auto scale, calculate optimal size based on available space
+                    if (sizeKey === 'auto') {
+                        setTimeout(calculateAutoScale, 100); // Small delay to let DOM settle
+                    }
+                    
+                    if (window.opener && window.opener.localStorage) {
+                        window.opener.localStorage.setItem('streamerSpriteSize', sizeKey);
+                    }
+                }
+                
+                // Theme change function
                 function changeTheme(themeKey) {
                     const themes = ${JSON.stringify(streamerThemes)};
                     const theme = themes[themeKey];
@@ -2682,38 +3080,15 @@ function setupStreamerWindow() {
                     }
                 }
                 
-                function changeSpriteSize(sizeKey) {
-                    const sprites = document.querySelectorAll('.pokemon-sprite');
-                    sprites.forEach(sprite => {
-                        sprite.classList.remove('sprite-small', 'sprite-medium', 'sprite-large', 'sprite-xl', 'sprite-auto');
-                        sprite.classList.add('sprite-' + sizeKey);
-                    });
-                    
-                    const emptySlots = document.querySelectorAll('.empty-slot');
-                    emptySlots.forEach(slot => {
-                        slot.classList.remove('sprite-small', 'sprite-medium', 'sprite-large', 'sprite-xl', 'sprite-auto');
-                        slot.classList.add('sprite-' + sizeKey);
-                        
-                        if (sizeKey !== 'auto') {
-                            const sizes = {
-                                'small': '40px',
-                                'medium': '48px',
-                                'large': '64px',
-                                'xl': '80px'
-                            };
-                            slot.style.width = sizes[sizeKey];
-                            slot.style.height = sizes[sizeKey];
-                        } else {
-                            slot.style.width = '';
-                            slot.style.height = '';
-                        }
-                    });
-                    
-                    if (window.opener && window.opener.localStorage) {
-                        window.opener.localStorage.setItem('streamerSpriteSize', sizeKey);
+                // Window resize listener for auto scale recalculation
+                window.addEventListener('resize', function() {
+                    const spriteSizeSelector = document.getElementById('sprite-size-selector');
+                    if (spriteSizeSelector && spriteSizeSelector.value === 'auto') {
+                        setTimeout(calculateAutoScale, 100); // Small delay to let layout settle
                     }
-                }
+                });
                 
+                // Initialize everything when DOM is loaded
                 document.addEventListener('DOMContentLoaded', function() {
                     const themeSelector = document.getElementById('theme-selector');
                     const spriteSizeSelector = document.getElementById('sprite-size-selector');
@@ -2760,7 +3135,7 @@ function setupStreamerWindow() {
             clearInterval(window.streamerUpdateInterval);
             window.streamerUpdateInterval = null;
         }
-    }, 2000); // Reduced to 2 seconds instead of 1
+    }, 2000); // 2 second intervals
 
     // Handle window close
     streamerWindow.addEventListener('beforeunload', () => {
@@ -2818,51 +3193,7 @@ function updateStreamerGymProgress(doc) {
     const championDefeated = champion ? currentProgress[champion.id] : false;
 
     // Calculate current level cap
-    let currentLevelCap = '--';
-    let nextEncounter = null;
-
-    // Find the next undefeated encounter in order
-    // Check main region gym leaders first
-    if (!nextEncounter) {
-        for (const leader of gymData.leaders) {
-            if (!currentProgress[leader.id]) {
-                nextEncounter = leader;
-                break;
-            }
-        }
-    }
-
-    // Then check Kanto leaders if they exist and main region is complete
-    if (!nextEncounter && gymData.kantoLeaders && completedGyms === totalGyms) {
-        for (const leader of gymData.kantoLeaders) {
-            if (!currentProgress[leader.id]) {
-                nextEncounter = leader;
-                break;
-            }
-        }
-    }
-
-    // Then check Elite Four if all gyms are complete
-    if (!nextEncounter && completedGymCount === totalGymCount) {
-        for (const member of gymData.eliteFour) {
-            if (!currentProgress[member.id]) {
-                nextEncounter = member;
-                break;
-            }
-        }
-    }
-
-    // Set the level cap display
-    if (nextEncounter) {
-        currentLevelCap = nextEncounter.levelCap.toString();
-    } else if (championDefeated) {
-        // All completed, show final level cap or "Max"
-        if (champion) {
-            currentLevelCap = champion.levelCap.toString();
-        } else {
-            currentLevelCap = 'MAX';
-        }
-    }
+    const currentLevelCap = getCurrentLevelCap();
 
     // Update gym counter
     const gymCountEl = doc.getElementById('gym-count');
@@ -3001,9 +3332,13 @@ function updateStreamerWindowSmart() {
 // Helper functions for targeted updates
 function updateStreamerGeneration(doc, generation) {
     const genInfo = doc.getElementById('streamer-gen-info');
-    if (genInfo && generation) {
-        const genDisplay = generationRomanNumerals[generation] || generation;
-        genInfo.textContent = `Gen ${genDisplay}`;
+    if (genInfo) {
+        if (gameData.isCustomRom) {
+            genInfo.textContent = `Custom (${gameData.customPokemonGens.join(', ')})`;
+        } else if (generation) {
+            const genDisplay = generationRomanNumerals[generation] || generation;
+            genInfo.textContent = `Gen ${genDisplay}`;
+        }
     }
 }
 
@@ -3059,6 +3394,13 @@ function updateStreamerTeamSmart(doc, newTeam) {
         } else {
             slot.innerHTML = `<div class="empty-slot sprite-${savedSpriteSize}">Empty</div>`;
         }
+    }
+
+    // Recalculate auto scale if active
+    if (savedSpriteSize === 'auto' && doc.defaultView && doc.defaultView.calculateAutoScale) {
+        setTimeout(() => {
+            doc.defaultView.calculateAutoScale();
+        }, 50);
     }
 }
 
@@ -3138,39 +3480,6 @@ function updateStreamerTeam(doc) {
             const isFainted = pokemon.fainted;
             const isShiny = pokemon.isShiny;
 
-            // Add shiny styling if needed
-            if (isShiny && doc.head) {
-                // Add shiny CSS to streamer window if not already present
-                let shinyStyle = doc.getElementById('shiny-styles');
-                if (!shinyStyle) {
-                    shinyStyle = doc.createElement('style');
-                    shinyStyle.id = 'shiny-styles';
-                    shinyStyle.textContent = `
-                        .shiny-pokemon { 
-                            position: relative; 
-                        }
-                        .shiny-pokemon::before {
-                            content: '✨';
-                            position: absolute;
-                            top: -5px;
-                            right: -5px;
-                            font-size: 8px;
-                            z-index: 20;
-                            animation: sparkleFloat 1.5s ease-in-out infinite alternate;
-                        }
-                        @keyframes shinySparkle {
-                            0%, 100% { filter: brightness(1) saturate(1); }
-                            50% { filter: brightness(1.2) saturate(1.3) hue-rotate(10deg); }
-                        }
-                        @keyframes sparkleFloat {
-                            0% { transform: translateY(0px) rotate(0deg); }
-                            100% { transform: translateY(-2px) rotate(10deg); }
-                        }
-                    `;
-                    doc.head.appendChild(shinyStyle);
-                }
-            }
-
             slotDiv.innerHTML = `
                 <div class="${isFainted ? 'fainted' : ''} ${isShiny ? 'shiny-pokemon' : ''}" style="position: relative;">
                     <img src="${pokemon.animatedSprite || pokemon.sprite}" 
@@ -3191,6 +3500,13 @@ function updateStreamerTeam(doc) {
         }
 
         container.appendChild(slotDiv);
+    }
+
+    // Trigger auto-scale calculation if auto is selected
+    if (savedSpriteSize === 'auto' && doc.defaultView && doc.defaultView.calculateAutoScale) {
+        setTimeout(() => {
+            doc.defaultView.calculateAutoScale();
+        }, 100);
     }
 }
 

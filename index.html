@@ -10,7 +10,7 @@
     <script src="pokemonNames.js"></script>
     <script src="routes.js"></script>
     <script src="gymLeaders.js"></script>
-        <script src="script.js"></script>
+    <script src="script.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
@@ -45,6 +45,9 @@
             margin-bottom: 20px;
             font-size: 20px;
             animation: glow 2s ease-in-out infinite alternate;
+            position: relative;
+            /* Add padding to prevent badge overlap on small screens */
+            padding: 0 120px;
         }
 
         @keyframes glow {
@@ -701,9 +704,16 @@
             border: 2px solid #d68910;
             border-radius: 4px;
             font-size: 8px;
-            margin-left: 10px;
             text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+
+            /* Position absolutely to not affect h1 centering */
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            margin: 0;
         }
+
 
         .main-grid {
             display: grid;
@@ -1537,6 +1547,24 @@
             }
         }
 
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 14px;
+                padding: 0 10px;
+                margin-bottom: 35px;
+                /* Add space for badge below */
+            }
+
+            .generation-badge {
+                /* Stack badge below title on very small screens */
+                position: static;
+                display: block;
+                margin: 8px auto 0;
+                transform: none;
+                width: fit-content;
+            }
+        }
+
         /* Responsive toast for smaller screens */
         @media (max-width: 600px) {
             .toast-container {
@@ -1554,8 +1582,14 @@
 
         /* Responsive adjustments */
         @media (max-width: 768px) {
-            .available-pokemon {
-                grid-template-columns: 1fr;
+            h1 {
+                font-size: 16px;
+                padding: 0 100px;
+            }
+
+            .generation-badge {
+                font-size: 7px;
+                padding: 3px 6px;
             }
         }
     </style>
@@ -1668,8 +1702,7 @@
                 <div class="pokemon-inputs">
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <div class="pokemon-input-wrapper" style="flex: 1;">
-                            <input type="text" id="pokemon-name" placeholder="Pokemon name..."
-                                autocomplete="off">
+                            <input type="text" id="pokemon-name" placeholder="Pokemon name..." autocomplete="off">
                             <div class="autocomplete-dropdown" id="pokemon-dropdown"></div>
                         </div>
                         <div class="shiny-checkbox-container">
